@@ -1,0 +1,20 @@
+# OS generated files #
+######################
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Compiled source #
+###################
+*.pyc
+__pycache__
+build
+SOMPY3.egg*
+images
+
+# Personal files #
+###################
+local_*
+local_*/
