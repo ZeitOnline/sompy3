@@ -10,9 +10,9 @@
 ###################
 *.pyc
 __pycache__
-build
-SOMPY3.egg*
-images
+*build
+*SOMPY3.egg*
+*images
 
 # Personal files #
 ###################
