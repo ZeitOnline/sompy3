@@ -11,8 +11,6 @@ import matplotlib.cbook
 import warnings
 warnings.filterwarnings("ignore",category=matplotlib.cbook.mplDeprecation)
 
-from lib import ZONgeneral
-
 from datetime import datetime, date, timedelta
 #import subprocess
 
@@ -58,10 +56,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--compute", "-c", action="store_true",  dest="compute", default=False, help="compute")
 args = parser.parse_args()
 
-dlen        = 100 # length of one packet
-dim         = 100
-size        = 200
-DataComplete, nclusters = generate_Data(dim,dlen,shuffle=True,maxclusters=100)
+dlen        = 100
+dim         = 3
+size        = 100
+DataComplete, nclusters = generate_Data(dim,dlen,shuffle=True)
 mapsize     = [size,size]
 nbatches    = 4
 maxtrainlen = 1
@@ -77,13 +75,6 @@ print('maxtrainlen:             {:d}'.format(maxtrainlen))
 print('radius:                  {:s}'.format('None' if radius is None else str(radius)))
 print('='*60)
 
-# som = sompy3.som(neighbourhoodMethod='gaussian', normalizer=None, mapsize=mapsize, dim=dim)
-# nn = 13
-# x,y = som._RowColFromNodeIndex(nn)
-# print(som.compNeighbourhood.calculate(4,(x,y)).reshape(som.nnodes,1))
-# som.codebook[nn] = np.ones(dim)
-# print(som.codebook)
-
 if (args.compute):
     m = []
     som = sompy3.som(normalizer='var', mapsize=mapsize, radius=radius)
@@ -96,8 +87,8 @@ if (args.compute):
         som.train(batch,maxtrainlen=maxtrainlen)
         m.append( (datetime.now() - a).total_seconds() )
         print('up to now: computing time for one batch took between {:f} and {:f} s, mean {:f} s'.format(np.min(m),np.max(m),np.mean(m)))
-        som.visualizeCodebook(path='./images/',number=bat,dimnames=None)
-        #som.visualizeClusters(nclusters,number=bat,text=True,interiorPoints=3,path="./images/")
+        som.visualizeCodebook(path='./images/',filenameAdd=bat,dimnames=None)
+        som.visualizeClusters(nclusters,filenameAdd=bat,text=True,interiorPoints=3,path="./images/")
 
 # ------------- stop timer
 compEnd = datetime.now()

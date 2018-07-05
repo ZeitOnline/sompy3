@@ -2,10 +2,6 @@
 import os
 import sys
 import numpy as np
-# from multiprocessing import Pool, TimeoutError
-#from multiprocessing.dummy import Pool
-#from multiprocessing import cpu_count
-#import itertools
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 import matplotlib.colors as pltcol
@@ -13,13 +9,9 @@ import matplotlib.cbook
 import warnings
 warnings.filterwarnings("ignore",category=matplotlib.cbook.mplDeprecation)
 import glob
-#import threading
 
 import sompy3.normalization.normalization as norm
-import sompy3.neighbourhood.neighbourhood as ngb
 from scipy.sparse import csr_matrix
-
-EPS = .0000000000000000001
 
 import ctypes as ct
 #_trainlib = ct.CDLL('./train.so')
@@ -76,13 +68,6 @@ class som(object):
             self._initializeCodebook()
 
         self.radius = np.min(mapsize)*.1 if radius is None else radius
-        self.neighbourhoodBase = np.zeros([3*self.mapsize[0],3*self.mapsize[1]])
-        for i in range(3*self.mapsize[0]):
-            for j in range(3*self.mapsize[1]):
-                self.neighbourhoodBase[i,j] = (i-self.mapsize[0])**2 + (j-self.mapsize[1])**2
-        self.neighbourhoodBase = np.exp(-1.0*self.neighbourhoodBase/(2*self.radius**(1.5)))
-
-        # ray.init()
 
     # ========================================================================================================================================
     def _initializeCodebook(self):
@@ -150,23 +135,11 @@ class som(object):
             else:
                 print('   training step {:d}, learningRate: {:f}, radius: {:f}, sequential'.format(step,learningRate[step],radius[step]))
 
-            #for d in data:
-                #print(self.codebook + self._train(d,learningRate[step]))
-            #trainSequential(learningRate[step],data,self.dim,self.dlen,self.codebook,self.mapsize,self.radius)
             if (parallel):
                 trainParallel(learningRate[step],data,self.dim,self.dlen,self.codebook,self.mapsize,radius[step])
             else:
                 trainSequential(learningRate[step],data,self.dim,self.dlen,self.codebook,self.mapsize,radius[step])
 
-            # batchsize = 4
-            # datalen = data.shape[0]
-            # for b in range(0,datalen,batchsize):
-            #     print('batch',b,min(datalen,b+batchsize))
-            #     with Pool(processes=4) as pool:
-            #         jobs = [pool.apply_async(_trainParallel, (data[d],learningRate[step],self.nnodes,self.codebook,self.xpos,self.ypos,self.neighbourhoodBase,)) for d in range(b,min(datalen,b+batchsize))]
-            #     print('jobs:',len(jobs))
-            #     for res in [job.get() for job in jobs]:
-            #         self.codebook += r
 
         return
 
@@ -285,11 +258,7 @@ class som(object):
                 nn = self._NodeIndexFromRowCol(row,col)
                 s = self.codebook[nn]
             else:
-                # for i in range(interiorPoints):
-                #    C = self._interior(C)
                 s = np.mean([self.codebook[self._NodeIndexFromRowCol(row,col)] for (row,col) in C],axis=0)
-                #print([self.codebook[self._NodeIndexFromRowCol(row,col)] for (row,col) in C])
-                #print(s)
             plt.bar(x, s, .5, align='center')
             plt.ylim(ymin=-1,ymax=1)
             plt.title('cluster ' + str(cluster), size=10)
@@ -320,23 +289,3 @@ class som(object):
             if pyx[i-1][0] == x-1 and pyx[i-1][1] == y and pyx[i+1][0] == x+1 and pyx[i+1][1] == y and [x,y] in interiorPointsY:
                 interiorPoints.append([x,y])
         return np.array(interiorPoints)
-
-
-    # ========================================================================================================================================
-    def _train(self,d,learningRate):
-    # ========================================================================================================================================
-        # print('py working with this vector:',d)
-        # print('py codebook:')
-        # print(self.codebook)
-        D     = np.array([d,]*self.nnodes) - self.codebook
-        E = np.einsum('ij,ij->i', D, D)
-        # print('py E:')
-        # print(E)
-        bmu   = np.argmin(E)
-        # print('py bmu:',bmu)
-        xs,xe = self.xpos[bmu]
-        ys,ye = self.ypos[bmu]
-        neigh = self.neighbourhoodBase[xs:xe,ys:ye].reshape(self.nnodes,1)
-        # print('py neigh:')
-        # print(learningRate*neigh)
-        return learningRate * (neigh*D)

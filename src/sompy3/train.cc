@@ -104,6 +104,19 @@ extern "C" void trainParallel(double learningRate, double *data, int dim, int dl
   }
 }
 
+// ---------------------------------------------------------------------------------
+extern "C" void listBMUSequential(double *data, int dim, int dlen, double *codebook, int *mapsize, int *bmuList) {
+// ---------------------------------------------------------------------------------
+  int bmu,from;
+
+  for (int f=0; f < dlen; f++) {
+    from = f*dim;
+    bmu = findBMU (mapsize, codebook, data, dim, from);
+    bmuList[f] = bmu;
+  }
+
+}
+
 
 // ---------------------------------------------------------------------------------
 extern "C" void test(double *data, int cols, int rows) {
