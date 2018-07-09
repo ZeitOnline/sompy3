@@ -28,18 +28,35 @@ for file in filelist:
         trainfile = file
 _trainlib = ct.CDLL(trainfile, ct.RTLD_GLOBAL)
 _trainlib.trainSequential.argtypes = [ct.c_double, ct.POINTER(ct.c_double), ct.c_int, ct.c_int, ct.POINTER(ct.c_double), ct.POINTER(ct.c_int), ct.c_double]
-_trainlib.trainParallel.argtypes = [ct.c_double, ct.POINTER(ct.c_double), ct.c_int, ct.c_int, ct.POINTER(ct.c_double), ct.POINTER(ct.c_int), ct.c_double]
+_trainlib.trainParallel.argtypes = [ct.c_double, ct.POINTER(ct.c_double), ct.c_int, ct.c_int, ct.POINTER(ct.c_double), ct.POINTER(ct.c_int), ct.c_double, ct.c_int]
+_trainlib.getBMUlistSequential.argtypes = [ct.POINTER(ct.c_double), ct.c_int, ct.c_int, ct.POINTER(ct.c_double), ct.POINTER(ct.c_int), ct.POINTER(ct.c_long)]
+_trainlib.getBMUlistParallel.argtypes = [ct.POINTER(ct.c_double), ct.c_int, ct.c_int, ct.POINTER(ct.c_double), ct.POINTER(ct.c_int), ct.POINTER(ct.c_long), ct.c_int]
+_trainlib.getUMatrix.argtypes = [ct.POINTER(ct.c_double), ct.POINTER(ct.c_int), ct.c_int, ct.POINTER(ct.c_double)]
 
 def trainSequential(learningRate,d,dim,dlen,codebook,mapsize,radius):
     global _trainlib
     _trainlib.trainSequential(learningRate,d.ctypes.data_as(ct.POINTER(ct.c_double)),dim,dlen,codebook.ctypes.data_as(ct.POINTER(ct.c_double)),(ct.c_int*2)(*mapsize),radius)
     return
 
-def trainParallel(learningRate,d,dim,dlen,codebook,mapsize,radius):
+def trainParallel(learningRate,d,dim,dlen,codebook,mapsize,radius,ncores=4):
     global _trainlib
-    _trainlib.trainParallel(learningRate,d.ctypes.data_as(ct.POINTER(ct.c_double)),dim,dlen,codebook.ctypes.data_as(ct.POINTER(ct.c_double)),(ct.c_int*2)(*mapsize),radius)
+    _trainlib.trainParallel(learningRate,d.ctypes.data_as(ct.POINTER(ct.c_double)),dim,dlen,codebook.ctypes.data_as(ct.POINTER(ct.c_double)),(ct.c_int*2)(*mapsize),radius,ncores)
     return
 
+def getBMUlistSequential(data,dim,dlen,codebook,mapsize,bmuList):
+    global _trainlib
+    _trainlib.getBMUlistSequential(data.ctypes.data_as(ct.POINTER(ct.c_double)),dim,dlen,codebook.ctypes.data_as(ct.POINTER(ct.c_double)),(ct.c_int*2)(*mapsize),bmuList.ctypes.data_as(ct.POINTER(ct.c_long)))
+    return
+
+def getBMUlistParallel(data,dim,dlen,codebook,mapsize,bmuList,ncores=4):
+    global _trainlib
+    _trainlib.getBMUlistParallel(data.ctypes.data_as(ct.POINTER(ct.c_double)),dim,dlen,codebook.ctypes.data_as(ct.POINTER(ct.c_double)),(ct.c_int*2)(*mapsize),bmuList.ctypes.data_as(ct.POINTER(ct.c_long)),ncores)
+    return
+
+def getUMatrix(codebook,mapsize,dim,umatrix):
+    global _trainlib
+    _trainlib.getUMatrix(codebook.ctypes.data_as(ct.POINTER(ct.c_double)),(ct.c_int*2)(*mapsize),dim,umatrix.ctypes.data_as(ct.POINTER(ct.c_double)))
+    return
 
 class NotImplementedError(Exception):
     pass
@@ -208,8 +225,6 @@ class som(object):
         minEntry = np.min(mp)
         maxEntry = np.max(mp)
         norm = pltcol.Normalize(vmin=minEntry, vmax=maxEntry)
-        norm = pltcol.Normalize(vmin=minEntry, vmax=maxEntry)
-
         plt.figure(figsize=(10,10))
         pl = plt.pcolor(mp, norm=norm, cmap=plt.cm.get_cmap('viridis'))
         if (text):
@@ -242,6 +257,24 @@ class som(object):
             filename = os.path.join(path,'clusters.png')
         plt.savefig(filename, dpi = 100)
         plt.close()
+
+
+        umatrix = np.zeros(self.mapsize,dtype=float)
+        getUMatrix(self.codebook,self.mapsize,self.dim,umatrix)
+        minEntry = np.min(umatrix)
+        maxEntry = np.max(umatrix)
+        norm = pltcol.Normalize(vmin=minEntry, vmax=maxEntry)
+        plt.figure(figsize=(10,10))
+        pl = plt.pcolor(umatrix, norm=norm, cmap=plt.cm.get_cmap('viridis'))
+        plt.tight_layout()
+        plt.colorbar()
+        if filenameAdd is not None:
+            filename = os.path.join(path,'umatrix_'+str(filenameAdd)+'.png')
+        else:
+            filename = os.path.join(path,'umatrix.png')
+        plt.savefig(filename, dpi = 100)
+        plt.close()
+
 
         nrows = int(np.ceil(np.sqrt(nclusters)))
         ncols = int(np.ceil(np.sqrt(nclusters)))

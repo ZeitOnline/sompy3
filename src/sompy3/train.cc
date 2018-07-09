@@ -19,7 +19,7 @@ int findBMU (int *mapsize,double *codebook, double *data, int dim, int from) {
     k = 0;
     dd = i*dim;
     while ((m < minm) && (k < dim)) {
-      m = m + (data[from + k] - codebook[dd + k]) * (data[from + k] - codebook[dd + k]);
+      m += (data[from + k] - codebook[dd + k]) * (data[from + k] - codebook[dd + k]);
       k++;
     }
 
@@ -55,9 +55,19 @@ void updateCodebook (int mapsizeCols, int bmu, int nnodes, double radius, double
 // ---------------------------------------------------------------------------------
 void train(int *mapsize, double *codebook, double *data, int dim, int from, int nnodes, double radius, double learningRate) {
 // ---------------------------------------------------------------------------------
+
   int bmu = findBMU(mapsize,codebook,data,dim,from);
   updateCodebook (mapsize[1], bmu, nnodes, radius, codebook, data, dim, from, learningRate);
 }
+
+// ---------------------------------------------------------------------------------
+void updateBMUlist(int *mapsize, double *codebook, double *data, int dim, int f, long *BMUlist) {
+// ---------------------------------------------------------------------------------
+  int from = f*dim;
+  int bmu = findBMU (mapsize,codebook,data,dim,from);
+  BMUlist[f] = (long)bmu;
+}
+
 
 // ---------------------------------------------------------------------------------
 extern "C" void trainSequential(double learningRate, double *data, int dim, int dlen, double *codebook, int *mapsize, double radius) {
@@ -71,52 +81,78 @@ extern "C" void trainSequential(double learningRate, double *data, int dim, int 
 }
 
 // ---------------------------------------------------------------------------------
-extern "C" void trainParallel(double learningRate, double *data, int dim, int dlen, double *codebook, int *mapsize, double radius) {
+extern "C" void trainParallel(double learningRate, double *data, int dim, int dlen, double *codebook, int *mapsize, double radius, int ncores) {
 // ---------------------------------------------------------------------------------
   int nnodes = mapsize[0]*mapsize[1];
   int from;
-  int ncores = 4;
   std::thread threads[ncores];
   int f = 0;
   int t = 0;
 
   while (f < dlen) {
 
-  // printf("f: %d starting process %d t: %d\n",f,f%ncores,t);
-  from = f*dim;
-  threads[t] = std::thread(train,mapsize,codebook,data,dim,from,nnodes,radius,learningRate);
+    from = f*dim;
+    threads[t] = std::thread(train,mapsize,codebook,data,dim,from,nnodes,radius,learningRate);
 
-  if (t == 3) {
-  // printf("f: %d waiting\n",f);
-    for (auto& th : threads) {
-      th.join();
+    f++;
+    t++;
+
+    if (t == ncores) {
+      for (auto& th : threads) {
+        th.join();
+      }
+      t = 0;
     }
   }
 
-    f++;
+  if (t < ncores) {
+    for (int tt=0; tt<t; tt++) {
+      threads[tt].join();
+    }
+  }
 
-    if (t < 3) {
-      t++;
-    } else {
+}
+
+// ---------------------------------------------------------------------------------
+extern "C" void getBMUlistParallel(double *data, int dim, int dlen, double *codebook, int *mapsize, long *BMUlist, int ncores) {
+// ---------------------------------------------------------------------------------
+  std::thread threads[ncores];
+  int t = 0;
+  int f = 0;
+
+  while (f < dlen) {
+
+    threads[t] = std::thread(updateBMUlist, mapsize, codebook, data, dim, f, BMUlist);
+
+    f++;
+    t++;
+
+    if (t == ncores) {
+      for (auto& th : threads) {
+        th.join();
+      }
       t = 0;
     }
 
   }
+
+  if (t < ncores) {
+    for (int tt=0; tt<t; tt++) {
+      threads[tt].join();
+    }
+  }
+
+
 }
 
 // ---------------------------------------------------------------------------------
-extern "C" void listBMUSequential(double *data, int dim, int dlen, double *codebook, int *mapsize, int *bmuList) {
+extern "C" void getBMUlistSequential(double *data, int dim, int dlen, double *codebook, int *mapsize, long *BMUlist) {
 // ---------------------------------------------------------------------------------
-  int bmu,from;
-
   for (int f=0; f < dlen; f++) {
-    from = f*dim;
-    bmu = findBMU (mapsize, codebook, data, dim, from);
-    bmuList[f] = bmu;
+    updateBMUlist(mapsize, codebook, data, dim, f, BMUlist);
   }
 
 }
-
 
 // ---------------------------------------------------------------------------------
 extern "C" void test(double *data, int cols, int rows) {
@@ -129,106 +165,67 @@ extern "C" void test(double *data, int cols, int rows) {
   }
 }
 
+// ---------------------------------------------------------------------------------
+extern "C" void getUMatrix(double *codebook, int *mapsize, int dim, double *umatrix) {
+// ---------------------------------------------------------------------------------
+  double a;
+  int counter;
+
+  for (int i=0;i<mapsize[0];i++) {
+    for (int j=0;j<mapsize[1];j++) {
+      umatrix[i*mapsize[1] + j] = 0;
+    }
+  }
+
+  for (int i=0;i<mapsize[0];i++) {
+    for (int j=0;j<mapsize[1];j++) {
+      counter = 0;
+      for (int di=fmax(0,i-1);di<fmin(mapsize[0],i+2);di++) {
+        for (int dj=fmax(0,j-1);dj<fmin(mapsize[1],j+2);dj++) {
+          a        = 0;
+          counter += 1;
+          for (int k=0;k<dim;k++) {
+            a += pow((codebook[i*mapsize[1] + j + k] - codebook[di*mapsize[1] + dj + k]),2);
+          }
+          umatrix[i*mapsize[1] + j] += sqrt(a);
+        }
+      }
+      umatrix[i*mapsize[1] + j] /= counter-1;
+      // printf("%d ",counter);
+    }
+  }
+
+}
 
 
 
 
-// printf("nnodes: %d\n",nnodes);
-// printf("mapsize: %dx%d\n",mapsize[0],mapsize[1]);
-
-// for (int i=0;i<nnodes;i++) {
-//   dd = i*dim;
-//   printf("\ncodebook at node %d:\n",i);
-//   for (int k=0;k<dim;k++) {
-//     printf("%lf ",codebook[dd + k]);
-//   }
-// }
-// printf("\n");
-
-// void process(float learningRate, int dim, float *codebook, int *mapsize, float radius, float *data) {
-//   float* d = new float[dim];
-//   for (int i=0; i<dlen; i = i+4) {
-//     d = data[i];
-//     std::thread t1(train,learningRate,d,dim,codebook,mapsize,radius);
-//     d = data[i+1];
-//     std::thread t2(train,learningRate,d,dim,codebook,mapsize,radius);
-//     d = data[i+2];
-//     std::thread t3(train,learningRate,d,dim,codebook,mapsize,radius);
-//     d = data[i+3];
-//     std::thread t4(train,learningRate,d,dim,codebook,mapsize,radius);
-//     t1.join();
-//     t2.join();
-//     t3.join();
-//     t4.join();
-//   }
-// }
-
+// // ---------------------------------------------------------------------------------
 // int main() {
-//
-//   int mapsize[2]     = {200,200};
-//   int nnodes         = mapsize[0]*mapsize[1];
-//   int dim            = 200;
-//   int dlen           = 200;
-//   float learningRate = .5;
-//   float radius       = .3;
-//   std::chrono::steady_clock::time_point compStart,compEnd;
-//   double elapsed;
-//
-//   printf("making codebook of size %d\n",nnodes*dim);
-//   float* codebook = new float[nnodes*dim];
-//   for (int i=0; i<nnodes; i++) {
-//     for (int k=0; k<dim; k++) {
-//       codebook[i*dim + k] = rand();
+// // ---------------------------------------------------------------------------------
+//   int mapsize[2];
+//   int dim=100;
+//   mapsize[0] = 5;
+//   mapsize[1] = 10;
+//   int nnodes = mapsize[0]*mapsize[1];
+//   double * codebook = new double[nnodes*dim];
+//   double * umatrix = new double[nnodes];
+//   for (int i=0;i<mapsize[1];i++) {
+//     for (int j=0;j<mapsize[0];j++) {
+//       for (int k=0;k<dim;k++) {
+//         codebook[i*mapsize[0] + j + k] = rand();
+//       }
 //     }
 //   }
 //
-//   printf("making data of size %d\n",dlen*dim);
-//   float** data = new float*[dlen];
-//   for (int i=0; i<dlen;i++) {
-//     data[i] = new float[dim];
-//     for (int j=0; j<dim; j++) {
-//       data[i][j] = rand();
+//   getUMatrix(codebook,mapsize,dim,umatrix);
+//
+//   for (int i=0;i<mapsize[1];i++) {
+//     for (int j=0;j<mapsize[0];j++) {
+//       printf("%f ",umatrix[i*mapsize[0] + j]);
 //     }
+//     printf("\n");
 //   }
 //
-//   printf("Sequential\n");
-//   for (int k=0;k<5;k++) {
 //
-//     compStart = std::chrono::steady_clock::now();
-//     float* d = new float[dim];
-//     for (int i=0; i<dlen; i++) {
-//       d = data[i];
-//       train(learningRate,d,dim,codebook,mapsize,radius);
-//     }
-//     compEnd= std::chrono::steady_clock::now();
-//     elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(compEnd - compStart).count();
-//     printf("Computing time: %lf\n",elapsed);
-//   }
-
-  // printf("Parallel\n");
-  // for (int k=0;k<5;k++) {
-  //
-  //   compStart = std::chrono::steady_clock::now();
-  //   float* d = new float[dim];
-  //   for (int i=0; i<dlen; i = i+4) {
-  //     d = data[i];
-  //     std::thread t1(train,learningRate,d,dim,codebook,mapsize,radius);
-  //     d = data[i+1];
-  //     std::thread t2(train,learningRate,d,dim,codebook,mapsize,radius);
-  //     d = data[i+2];
-  //     std::thread t3(train,learningRate,d,dim,codebook,mapsize,radius);
-  //     d = data[i+3];
-  //     std::thread t4(train,learningRate,d,dim,codebook,mapsize,radius);
-  //     t1.join();
-  //     t2.join();
-  //     t3.join();
-  //     t4.join();
-  //   }
-  //   compEnd= std::chrono::steady_clock::now();
-  //   elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(compEnd - compStart).count();
-  //   printf("Computing time: %lf\n",elapsed);
-  // }
-
-
-//   return 0;
 // }
