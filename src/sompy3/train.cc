@@ -185,7 +185,7 @@ extern "C" void getUMatrix(double *codebook, int *mapsize, int dim, double *umat
           a        = 0;
           counter += 1;
           for (int k=0;k<dim;k++) {
-            a += pow((codebook[i*mapsize[1] + j + k] - codebook[di*mapsize[1] + dj + k]),2);
+            a += pow((codebook[(i*mapsize[1] + j)*dim + k] - codebook[(di*mapsize[1] + dj)*dim + k]),2);
           }
           umatrix[i*mapsize[1] + j] += sqrt(a);
         }
