@@ -3,7 +3,7 @@ from setuptools import find_packages
 import sysconfig
 
 extra_compile_args = sysconfig.get_config_var('CFLAGS').split()
-extra_compile_args += ["-std=c++11", "-Wall", "-Wextra", "-O3", "-fPIC", "-ffast-math"]
+extra_compile_args += ["-std=c++11", "-Wall", "-Wextra", "-O3", "-fPIC", "-ffast-math", "-shared"]
 extra_compile_args = [e for e in extra_compile_args if e not in ['-O2']]
 
 trainer = Extension('train', sources = ['sompy3/train.cc'], language='c++11', extra_compile_args=extra_compile_args)

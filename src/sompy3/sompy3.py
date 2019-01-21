@@ -9,6 +9,7 @@ import matplotlib.cbook
 import warnings
 warnings.filterwarnings("ignore",category=matplotlib.cbook.mplDeprecation)
 import glob
+from collections import Counter
 
 import sompy3.normalization.normalization as norm
 from scipy.sparse import csr_matrix
@@ -77,6 +78,9 @@ class som(object):
         self.initialized     = False
         self.dim             = dim
         self.layout          = layout
+        self.umatrix         = None
+        self.clusters        = None
+        self.nclusters       = None
 
         if self.layout != 'rect':
             raise NotImplementedError("layout {:s} is not yet implemented".format(layout))
@@ -184,7 +188,7 @@ class som(object):
 
 
     # ========================================================================================================================================
-    def visualizeCodebook(self,path='',filenameAdd=None,dimnames=None):
+    def visualizeCodebook(self,path='',filenameAdd=None,dimnames=None,filePrefix=None):
     # ========================================================================================================================================
         nrows = int(np.ceil(np.sqrt(self.dim)))
         ncols = int(np.ceil(np.sqrt(self.dim)))
@@ -209,98 +213,78 @@ class som(object):
             ax.set_xticklabels([])
         plt.tight_layout()
         #plt.axes().set_aspect('equal', 'datalim')
+
         if filenameAdd is not None:
-            filename = os.path.join(path,'codebook_'+str(filenameAdd)+'.png')
+            fn = 'codebook_'+str(filenameAdd)+'.png'
         else:
-            filename = os.path.join(path,filenamePrefix+'.png')
+            fn = 'codebook.png'
+        if filePrefix is not None:
+            fn = str(filePrefix)+fn
+        filename = os.path.join(path,fn)
         plt.savefig(filename, dpi = 300)
         plt.close()
         return
 
     #--------------------------------------------------------------------------
-    def visualizeClusters(self,nclusters,text=False,dots=True,interiorPoints=None,path='',filenameAdd=None):
+    def visualizeClusters(self,kmeansClusters=None,text=False,path='',filenameAdd=None,filePrefix=None,centered=False,update=True):
     #--------------------------------------------------------------------------
-        kmeans = KMeans(n_clusters=nclusters, random_state=0).fit(self.codebook)
-        mp = kmeans.labels_.reshape(self.mapsize[0], self.mapsize[1])
-        minEntry = np.min(mp)
-        maxEntry = np.max(mp)
+
+        if (update):
+            self._updateUmatrix()
+
+        # save clusters
+        self.computeClusters(kmeansClusters=kmeansClusters)
+        print('  nclusters={:d}'.format(self.nclusters))
+
+        minEntry = np.min(self.clusters)
+        maxEntry = np.max(self.clusters)
         norm = pltcol.Normalize(vmin=minEntry, vmax=maxEntry)
         plt.figure(figsize=(10,10))
-        pl = plt.pcolor(mp, norm=norm, cmap=plt.cm.get_cmap('viridis'))
+        pl = plt.pcolor(self.clusters, norm=norm, cmap=plt.cm.get_cmap('viridis'))
+
         if (text):
-            for i in range(0,mp.shape[0],3):
-                for j in range(0,mp.shape[1],3):
-                    plt.text(j+.5,i+.5,mp[i,j],horizontalalignment='center',verticalalignment='center',size=10)
-        if (dots):
-            for cluster in range(nclusters):
-                C = np.array([ self._RowColFromNodeIndex(i) for i in range(self.nnodes) if kmeans.labels_[i] == cluster])
-                if interiorPoints is None:
-                    c = np.mean(C,axis=0)
-                    row,col = int(c[0]),int(c[1])
-                    plt.text(col+.5,row+.5,cluster,color='white',size=30)
-                else:
-                    CO = C
-                    for i in range(interiorPoints):
-                        C = self._interior(C)
-                        if len(C) < 5:
-                            C = CO
-                            print('WARNING: {:d} interior steps'.format(i-1))
-                            break
-                        else:
-                            CO = C
-                    # print('lenC:',len(C))
-                    plt.scatter(C[:,1],C[:,0],s=10,c='white')
+            if not (centered):
+                for i in range(0,self.mapsize[0],3):
+                    for j in range(0,self.mapsize[1],3):
+                        plt.text(j+.5,i+.5,self.clusters[i,j],horizontalalignment='center',verticalalignment='center',size=10)
+            else: # centered
+                for cluster in range(self.nclusters):
+                    cset = np.array([(row,col) for row in range(self.mapsize[0]) for col in range(self.mapsize[1]) if self.clusters[row,col] == cluster ])
+                    # print(cluster)
+                    # print(cset)
+                    meanpos = np.mean(cset,axis=0)
+                    i = int(meanpos[0])
+                    j = int(meanpos[1])
+                    #print(i,j)
+                    plt.text(j+.5,i+.5,cluster,horizontalalignment='center',verticalalignment='center',size=40,color='white')
+
         plt.tight_layout()
         if filenameAdd is not None:
-            filename = os.path.join(path,'clusters_'+str(filenameAdd)+'.png')
+            fn = 'clusters_'+str(filenameAdd)+'.png'
         else:
-            filename = os.path.join(path,'clusters.png')
+            fn = 'clusters.png'
+        if filePrefix is not None:
+            fn = str(filePrefix)+fn
+        filename = os.path.join(path,fn)
         plt.savefig(filename, dpi = 100)
         plt.close()
 
-
-        umatrix = np.zeros(self.mapsize,dtype=float)
-        getUMatrix(self.codebook,self.mapsize,self.dim,umatrix)
-        minEntry = np.min(umatrix)
-        maxEntry = np.max(umatrix)
+        # save umatrix
+        minEntry = np.min(self.umatrix)
+        maxEntry = np.max(self.umatrix)
         norm = pltcol.Normalize(vmin=minEntry, vmax=maxEntry)
         plt.figure(figsize=(10,10))
-        pl = plt.pcolor(umatrix, norm=norm, cmap=plt.cm.get_cmap('viridis'))
+        pl = plt.pcolor(self.umatrix, norm=norm, cmap=plt.cm.get_cmap('viridis'))
         plt.tight_layout()
         plt.colorbar()
         if filenameAdd is not None:
-            filename = os.path.join(path,'umatrix_'+str(filenameAdd)+'.png')
+            fn = 'umatrix_'+str(filenameAdd)+'.png'
         else:
-            filename = os.path.join(path,'umatrix.png')
+            fn = 'umatrix.png'
+        if filePrefix is not None:
+            fn = str(filePrefix)+fn
+        filename = os.path.join(path,fn)
         plt.savefig(filename, dpi = 100)
-        plt.close()
-
-
-        nrows = int(np.ceil(np.sqrt(nclusters)))
-        ncols = int(np.ceil(np.sqrt(nclusters)))
-        if (ncols-1)*nrows >= nclusters:
-            nrows -= 1
-        plt.figure(figsize=(nrows,ncols))
-        x = np.arange(self.dim)
-        for cluster in range(nclusters):
-            fig = plt.subplot(nrows, ncols, cluster+1)
-            C = np.array([ self._RowColFromNodeIndex(i) for i in range(self.nnodes) if kmeans.labels_[i] == cluster])
-            if interiorPoints is None:
-                c = np.mean(C,axis=0)
-                row,col = int(c[0]),int(c[1])
-                nn = self._NodeIndexFromRowCol(row,col)
-                s = self.codebook[nn]
-            else:
-                s = np.mean([self.codebook[self._NodeIndexFromRowCol(row,col)] for (row,col) in C],axis=0)
-            plt.bar(x, s, .5, align='center')
-            plt.ylim(ymin=-1,ymax=1)
-            plt.title('cluster ' + str(cluster), size=10)
-        plt.tight_layout()
-        if filenameAdd is not None:
-            filename = os.path.join(path,'cluster_details_'+str(filenameAdd)+'.png')
-        else:
-            filename = os.path.join(path,'cluster_details.png')
-        plt.savefig(filename, dpi = 300)
         plt.close()
 
         return
@@ -322,3 +306,64 @@ class som(object):
             if pyx[i-1][0] == x-1 and pyx[i-1][1] == y and pyx[i+1][0] == x+1 and pyx[i+1][1] == y and [x,y] in interiorPointsY:
                 interiorPoints.append([x,y])
         return np.array(interiorPoints)
+
+    # ========================================================================================================================================
+    def computeClusters(self,update=False,kmeansClusters=None):
+    # ========================================================================================================================================
+
+        if kmeansClusters == None:
+            print('Clustering... (water)')
+        else:
+            print('Clustering... (kmeans)')
+
+        if (update) or (self.umatrix is None):
+            self._updateUmatrix()
+
+        if (kmeansClusters is not None):
+             kmeans = KMeans(n_clusters=kmeansClusters, random_state=0).fit(self.codebook)
+             self.clusters = kmeans.labels_.reshape(self.mapsize[0], self.mapsize[1])
+        else:
+            self.clusters = np.array([np.nan for i in range(self.nnodes)]).reshape(self.mapsize)
+            sortedIndices = np.unravel_index(np.argsort(self.umatrix, axis=None), self.mapsize)
+            actCluster = 0
+            for pos in zip(sortedIndices[0],sortedIndices[1]):
+                row,col = pos
+                ncl = self._findClustersInNeighbourhood(row,col)
+                # if ncl == 6:
+                #     print(row,col,ncl)
+                if np.isnan(ncl):
+                    self.clusters[row,col] = actCluster
+                    # print(self.umatrix[row,col],row,col,actCluster)
+                    actCluster += 1
+                else:
+                    self.clusters[row,col] = ncl
+                    # print(self.umatrix[row,col],row,col,ncl)
+
+        self.clusters = self.clusters.astype(np.int, copy=False)
+        self.nclusters = int(np.max(self.clusters)+1)
+
+        return
+
+    # ========================================================================================================================================
+    def _findClustersInNeighbourhood(self,row,col,distBound=3):
+    # ========================================================================================================================================
+        neighbourClusters = []
+        for i in range(row-distBound,row+distBound+1):
+            for j in range(col-distBound,col+distBound+1):
+                if i >= 0 and i < self.mapsize[0] and j >= 0 and j < self.mapsize[1]:
+                    if not np.isnan(self.clusters[i,j]):
+                        neighbourClusters.append(self.clusters[i,j])
+                else:
+                    pass
+        if len(neighbourClusters) > 0:
+            return Counter(neighbourClusters).most_common()[0][0]
+        else:
+            return np.nan
+
+    # ========================================================================================================================================
+    def _updateUmatrix(self):
+    # ========================================================================================================================================
+        umatrix = np.zeros(self.mapsize,dtype=float)
+        getUMatrix(self.codebook,self.mapsize,self.dim,umatrix)
+        self.umatrix = umatrix
+        return

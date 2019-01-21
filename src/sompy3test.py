@@ -88,7 +88,7 @@ if (args.compute):
         m.append( (datetime.now() - a).total_seconds() )
         print('up to now: computing time for one batch took between {:f} and {:f} s, mean {:f} s'.format(np.min(m),np.max(m),np.mean(m)))
         som.visualizeCodebook(path='./images/',filenameAdd=bat,dimnames=None)
-        som.visualizeClusters(nclusters,filenameAdd=bat,text=True,interiorPoints=3,path="./images/")
+        som.visualizeClusters(kmeansClusters=4,filenameAdd=bat,text=True,path="./images/",centered=True)
 
 # ------------- stop timer
 compEnd = datetime.now()
